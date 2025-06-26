@@ -1,0 +1,33 @@
+# Stage 1: Build the application
+FROM oven/bun:alpine AS builder
+WORKDIR /app
+
+# Copy package files and install dependencies.
+COPY ./package.json ./bun.lock ./
+RUN bun install
+
+# Copy the rest of the source code and build the project
+COPY . .
+RUN bun run build
+
+# Stage 2: Create the production image
+FROM oven/bun:alpine AS runner
+WORKDIR /app
+
+# Copy production dependencies and the built application from the builder stage
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+
+# Mount secret and save it to the path the application expects.
+# Fly.io handles the secret mounting when you deploy.
+RUN --mount=type=secret,id=COPILOT_TOKEN \
+    mkdir -p /root/.local/share/copilot-api \
+    && cp /run/secrets/COPILOT_TOKEN /root/.local/share/copilot-api/github_token \
+    && chmod 600 /root/.local/share/copilot-api/github_token
+
+# Expose the application port
+EXPOSE 4141
+
+# Start the application.
+# It will read the token from the file created above.
+CMD ["bun", "run", "dist/main.js", "start"] 
